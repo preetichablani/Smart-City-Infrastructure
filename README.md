@@ -141,7 +141,7 @@ Install the following before running the project:
 ### 1. Clone the Repository
 
 ```bash
-git clone <YOUR_GITHUB_REPOSITORY_URL>
+git clone https://github.com/preetichablani/Smart-City-Infrastructure
 cd Identity2026/client
 ```
 
