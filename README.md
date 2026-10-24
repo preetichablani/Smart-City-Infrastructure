@@ -200,7 +200,7 @@ npm run dev
 Open the local URL printed by Vite in your terminal, typically:
 
 ```text
-http://localhost:5174
+http://localhost:5173
 ```
 
 If Vite selects another port, use the URL it displays.
