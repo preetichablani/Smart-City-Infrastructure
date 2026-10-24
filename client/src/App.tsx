@@ -182,7 +182,6 @@ function BackendHealingGraph({
         </span>
       </div>
 
-      {/* Graphical backend execution pipeline */}
       <div className="backend-live-graph">
         <div className="backend-live-heading">
           <div>
@@ -367,7 +366,14 @@ function BackendHealingGraph({
     </section>
   );
 }
-
+type HealingChange = {
+  recordId: string;
+  column: string;
+  before: string;
+  after: string;
+  action: 'REPAIRED' | 'FLAGGED' | 'REMOVED';
+  reason: string;
+};
 type HealingReport = {
   totalRecords: number;
   missingValues: number;
@@ -379,10 +385,12 @@ type HealingReport = {
   needsReview: number;
   removedRecords: number;
   outputRecords: number;
+  outliersFlagged?: number;
 };
 
 type HealingResult = {
   report: HealingReport;
+  changes?: HealingChange[];
   downloadUrl: string;
   healingMode: string;
   preview: {
@@ -481,6 +489,11 @@ const navItems = [
 type Page = typeof navItems[number]['id'];
 
 const initialMetrics: Metrics = { totalTests: 0, detectedCount: 0, recoveredCount: 0, failedCount: 0, detectionRate: 0, recoveryRate: 0, averageTotalRecoveryMs: null, averageRecoveryMs: null, healingEnabled: true };
+const actionColors: Record<string, string> = {
+  REPAIRED: '#22c55e',
+  FLAGGED: '#f59e0b',
+  REMOVED: '#ef4444',
+};
 function timeLabel(value?: string | null) { return value ? new Date(value).toLocaleString() : '—'; }
 function duration(value?: number | null) { return value == null ? '—' : value < 1000 ? `${value} ms` : `${(value / 1000).toFixed(2)} s`; }
 function statusLabel(status: string) { return status.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); }
@@ -614,9 +627,9 @@ async function uploadHealingFile(file: File) {
       throw new Error(data.message || 'CSV upload failed.');
     }
 
-    const downloadUrl = data.downloadUrl.startsWith('http')
-      ? data.downloadUrl
-      : `http://localhost:5000${data.downloadUrl}`;
+   const downloadUrl = data.downloadUrl.startsWith('http')
+  ? data.downloadUrl
+  : `${API_BASE}${data.downloadUrl}`;
 
     setHealingResult({
       ...data,
@@ -926,6 +939,7 @@ return (
       <Metric label="Invalid values" value={String(healingResult.report.invalidValues)} note="Out-of-range or invalid numbers" icon="⌁" />
       <Metric label="Repaired values" value={String(healingResult.report.repairedValues ?? 0)} note="Values actually replaced" icon="↻" />
       <Metric label="Needs review" value={String(healingResult.report.needsReview)} note="Records with unresolved issues" icon="◷" />
+      <Metric label="Outliers flagged" value={String(healingResult.report.outliersFlagged ?? 0)} note="Unusual values kept for review" icon="◎" />
     </section>
 
     <section className="panel healing-report-panel">
@@ -944,7 +958,33 @@ return (
         <div><span>Output records</span><strong>{healingResult.report.outputRecords}</strong></div>
         <div><span>Repaired records</span><strong>{healingResult.report.repairedRecords}</strong></div>
       </div>
-
+        {healingResult.changes && healingResult.changes.length > 0 && (
+  <div className="healing-preview">
+    <h3>Changes made ({healingResult.changes.length}{healingResult.changes.length >= 200 ? '+' : ''})</h3>
+    <p>Every repaired, flagged or removed value is listed here.</p>
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Record</th><th>Column</th><th>Before</th><th>After</th><th>Action</th><th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {healingResult.changes.map((c, index) => (
+            <tr key={index}>
+              <td>{c.recordId || '—'}</td>
+              <td>{c.column}</td>
+              <td>{c.before === '' ? '(empty)' : c.before}</td>
+              <td><strong>{c.after}</strong></td>
+              <td><span style={{ color: actionColors[c.action], fontWeight: 600 }}>{c.action}</span></td>
+              <td>{c.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+)}
       {healingResult.preview && (
         <div className="healing-preview">
           <h3>Before and after preview</h3>

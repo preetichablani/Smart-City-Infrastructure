@@ -96,9 +96,7 @@ function healCsvRows(rows) {
     numericFields.includes(key.toLowerCase())
   );
 
-  // Calculate medians using valid values from the original dataset.
   const medians = {};
-
   for (const key of numericKeys) {
     const field = key.toLowerCase();
     const [min, max] = validRanges[field];
@@ -118,10 +116,7 @@ function healCsvRows(rows) {
     }
   }
   
-  // Detect statistical outliers using the IQR method.
-  // Outliers are flagged for review, not automatically overwritten.
   const outlierBounds = {};
-
   for (const key of numericKeys) {
     const field = key.toLowerCase();
     const [min, max] = validRanges[field];
@@ -158,7 +153,6 @@ function healCsvRows(rows) {
     const q3 = percentile(values, 0.75);
     const iqr = q3 - q1;
 
-    // If all values are identical, there is no useful IQR signal.
     if (iqr === 0) continue;
 
     outlierBounds[key] = {
@@ -169,18 +163,26 @@ function healCsvRows(rows) {
 
   const seen = new Set();
   const cleanedRows = [];
+  const changes = [];
 
   for (const original of rows) {
     const row = { ...original };
     let changed = false;
     let needsReview = false;
+    const recordId = original[fieldNames[0]] ?? '';
     const fingerprint = JSON.stringify(
       Object.keys(row).sort().map((key) => [key, row[key]])
     );
 
-    if (seen.has(fingerprint)) {
+       if (seen.has(fingerprint)) {
       report.duplicateRecords++;
       report.removedRecords++;
+      if (changes.length < 200) {
+        changes.push({
+          recordId, column: '(row)', before: 'duplicate', after: 'removed',
+          action: 'REMOVED', reason: 'Exact duplicate record',
+        });
+      }
       continue;
     }
 
@@ -208,19 +210,40 @@ function healCsvRows(rows) {
         bounds &&
         (value < bounds.lower || value > bounds.upper);
 
-      if (isOutlier) {
-        report.outliersDetected++;
-        report.outliersFlagged++;
-        needsReview = true;
-      }
+    if (isOutlier) {
+  report.outliersDetected++;
+  report.outliersFlagged++;
+  needsReview = true;
+  if (changes.length < 200) {
+    changes.push({
+      recordId, column: key, before: raw, after: raw,
+      action: 'FLAGGED', reason: 'Statistical outlier (IQR); kept for review',
+    });
+  }
+}
       if (missing || invalid) {
         if (medians[key] !== undefined) {
-          row[key] = String(medians[key]);
-          report.repairedValues++;
-          changed = true;
-        } else {
-          needsReview = true;
-        }
+  row[key] = String(medians[key]);
+  report.repairedValues++;
+  changed = true;
+  if (changes.length < 200) {
+    changes.push({
+      recordId, column: key, before: raw, after: row[key],
+      action: 'REPAIRED',
+      reason: missing
+        ? 'Missing value replaced with column median'
+        : 'Invalid or out-of-range value replaced with column median',
+    });
+  }
+} else {
+  needsReview = true;
+  if (changes.length < 200) {
+    changes.push({
+      recordId, column: key, before: raw, after: raw,
+      action: 'FLAGGED', reason: 'No valid values to compute a median',
+    });
+  }
+}
       }
     }
 
@@ -232,16 +255,14 @@ function healCsvRows(rows) {
         needsReview = true;
       }
     }
-
     if (changed) report.repairedRecords++;
-
     if (needsReview) report.needsReview++;
-
     cleanedRows.push(row);
   }
 
   return {
     rows: cleanedRows,
+    changes,
     report: {
       ...report,
       outputRecords: cleanedRows.length,
@@ -316,6 +337,7 @@ await DataHealingEvent.create({
         message: 'CSV analysis completed.',
         healingMode: 'Missing and out-of-range numeric values are replaced with the column median. Values that cannot be repaired are flagged for review.',
         report: result.report,
+        changes: result.changes,
         downloadUrl: `/api/data-healing/download/${outputName}`,
         preview: {
   original: originalPreview,
@@ -483,9 +505,6 @@ const incidentSchema = new mongoose.Schema(
 
 const Service = mongoose.model('PhoenixService', serviceSchema);
 const Incident = mongoose.model('PhoenixIncident', incidentSchema);
-
-
-
 const dataHealingEventSchema = new mongoose.Schema(
   {
     eventId: { type: String, unique: true, required: true },
@@ -635,7 +654,6 @@ function publicService(service) {
 
 function timeMs(start, end) {
   if (!start || !end) return null;
-
   return Math.max(
     0,
     new Date(end).getTime() - new Date(start).getTime(),
@@ -757,7 +775,6 @@ async function runHealthMonitor() {
     let failed = 0;
 
     for (const service of services) {
-      // These are simulated readings, not real city-system measurements.
       const loadPct = Math.max(
         5,
         Math.min(
@@ -1114,7 +1131,6 @@ app.get('/api/risk-scores', async (_req, res, next) => {
   }
 });
 
-// 11. Incident history
 app.get('/api/incidents', async (_req, res, next) => {
   try {
     const incidents = await Incident.find()
@@ -1131,7 +1147,6 @@ app.get('/api/incidents', async (_req, res, next) => {
 app.get('/api/metrics', async (_req, res, next) => {
   try {
     const all = await Incident.find().lean();
-
     const recovered = all.filter(
       (incident) => incident.status === 'RECOVERED',
     );
@@ -1159,7 +1174,6 @@ app.get('/api/metrics', async (_req, res, next) => {
               values.length,
           )
         : null;
-
 
         const detectionRate = all.length
   ? Math.round((detected.length / all.length) * 100)

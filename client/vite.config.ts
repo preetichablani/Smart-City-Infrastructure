@@ -28,6 +28,7 @@ export default defineConfig({
 
         runtimeCaching: [
   {
+    // Health check kabhi cache nahi hona chahiye
     urlPattern: ({ url }) => url.pathname === '/api/health',
     handler: 'NetworkOnly',
   },

@@ -4,11 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
-  },
+  "dev": "vite",
+  "build": "tsc -b && vite build",
+  "lint": "eslint .",
+  "preview": "vite preview",
+  "server": "node server/index.js",
+  "datasets": "node generate-datasets.js",
+  "chaos": "node server/chaos-test.js"
+},
   "dependencies": {
     "cors": "^2.8.6",
     "csv-parse": "^7.0.3",
