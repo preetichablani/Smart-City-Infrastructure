@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import './index.css';
+
 type Status = 'HEALTHY' | 'DEGRADED' | 'FAILED';
 type FailureType = 'PROCESS_CRASH' | 'DEPENDENCY_TIMEOUT' | 'INVALID_RECORD' | 'REQUEST_OVERLOAD' | 'UNOBSERVABLE_FAULT';
 type Service = { id: string; name: string; category: string; description: string; status: Status; workerRunning: boolean; dependencyAvailable: boolean; recordValid: boolean; queueDepth: number; monitorSignalAvailable: boolean; loadPct?: number; latencyMs?: number; metricLabel?: string; metricUnit?: string; riskScore?: number; riskLevel?: 'LOW' | 'MEDIUM' | 'HIGH'; riskReasons?: string[]; riskUpdatedAt?: string; updatedAt?: string };
@@ -63,12 +64,14 @@ function BackendHealingGraph({
   };
 
   const recovered = latest?.status === 'RECOVERED';
+
   const failed = ['FAILED', 'DETECTION_FAILED'].includes(
     latest?.status || ''
   );
 
   const verificationPassed =
     latest?.verification?.startsWith('PASSED') ?? false;
+
   const verificationFailed =
     latest?.verification?.startsWith('FAILED') ?? false;
 
@@ -179,6 +182,7 @@ function BackendHealingGraph({
         </span>
       </div>
 
+      {/* Graphical backend execution pipeline */}
       <div className="backend-live-graph">
         <div className="backend-live-heading">
           <div>
@@ -462,7 +466,8 @@ function DataHealingFlowGraph({
   );
 }
 
-const API = 'http://localhost:5000/api';
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
+const API = `${API_BASE}/api`;
 const CACHE_KEY = 'nexora-offline-snapshot-v2';
 const navItems = [
   { id: 'overview', label: 'Overview', icon: '◫' },
@@ -557,7 +562,10 @@ setError('');
   const healthyCount = services.filter(s => s.status === 'HEALTHY').length;
   const overallStatus = services.length === 0 ? 'UNKNOWN' : services.some(s => s.status === 'FAILED') ? 'CRITICAL' : services.some(s => s.status === 'DEGRADED') ? 'DEGRADED' : 'OPERATIONAL';
   const filteredIncidents = useMemo(() => incidents.filter(i => `${i.serviceName} ${i.type} ${i.status} ${i.diagnosis}`.toLowerCase().includes(search.toLowerCase())), [incidents, search]);
-  
+  const displayOrder = ['powergrid', 'aquaflow', 'citylink', 'medicore'];
+const orderedServices = [...services].sort(
+  (a, b) => displayOrder.indexOf(a.id) - displayOrder.indexOf(b.id)
+);
   const dependencyLinks = [
     { source: 'powergrid', target: 'aquaflow' },
     { source: 'citylink', target: 'medicore' },
@@ -688,11 +696,9 @@ return (
 
       {page === 'overview' && <>
         <section className="hero-panel"><div className="hero-copy"><div className="live-label"><span className="pulse-dot" /> LIVE SERVICE MONITOR</div><h2>Resilience at the<br /><em>speed of the city.</em></h2><p>Detect. Diagnose. Recover. Verify. A safe simulation of autonomous service resilience across critical city systems.</p><div className="hero-foot"><span className={`status-badge ${overallStatus === 'OPERATIONAL' ? 'good' : overallStatus === 'DEGRADED' ? 'warn' : 'bad'}`}><i />{statusLabel(overallStatus)}</span><span className="hero-separator" /> <span>{healthyCount} of {services.length} services healthy</span></div></div><div className="hero-orbit"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="orbit-core"><span>NX</span><small>CORE</small></div><span className="orbit-node node-one">⚡</span><span className="orbit-node node-two">⌁</span><span className="orbit-node node-three">✚</span><span className="orbit-node node-four">↗</span></div><div className="hero-code">SYSTEM / HEALTHCHECK<br />AUTO-REMEDIATION: {healingEnabled ? 'ENABLED' : 'DISABLED'}<br />ENVIRONMENT: SIMULATED</div></section>
-        
 
         <section className="metric-grid overview-metric-grid">
           
-
 <Metric label="Service health" value={`${healthyCount}/${services.length || 0}`} note="Services currently healthy" icon="◈" /><Metric label="Tests executed" value={String(metrics.totalTests)} note="Stored in MongoDB" icon="ϟ" /><Metric label="Verified recoveries" value={String(metrics.recoveredCount)} note={`${metrics.recoveryRate}% of all tests`} icon="↻" /><Metric label="Detection failures" value={String(incidents.filter(i => i.status === 'DETECTION_FAILED').length)} note="Known monitor blind spots" icon="!" /><Metric label="Live health monitor" value={backendStatus !== 'ONLINE' ? 'OFFLINE' : monitorState.running ? 'RUNNING' : 'STARTING'} note={backendStatus !== 'ONLINE' ? 'Backend connection unavailable' : `${monitorState.totalChecks} checks · Last: ${monitorState.lastCheckAt ? new Date(monitorState.lastCheckAt).toLocaleTimeString() : 'Waiting'}`} icon="◷" /></section>
         <section className="section-heading"><div><div className="eyebrow">CITY INFRASTRUCTURE</div><h2>Service health</h2></div><button className="text-button" onClick={() => setPage('dependencies')}>View dependency map ↗</button></section>
         <section className="service-grid">{services.map(s => <ServiceCard key={s.id} service={s} onRecover={() => void recoverService(s.id)} disabled={backendStatus !== 'ONLINE'} />)}</section>
@@ -720,7 +726,6 @@ return (
         : 'AWAITING DATA'}
     </span>
   </div>
-
   {!healingResult ? (
     <div className="empty-state">
       <span>✳</span>
@@ -804,6 +809,7 @@ return (
 </section>
 
 </>}
+
       {page === 'dependencies' && <>
         <section className="page-intro">
           <div className="eyebrow">SERVICE RELATIONSHIPS</div>
@@ -821,7 +827,7 @@ return (
             <strong>Monitoring<br />Controller</strong>
             <small>HEALTH PROBES</small>
           </div>
-          {services.map((s, index) => (
+          {orderedServices.map((s, index) => (
             <div className={`dependency-node dep-${index}`} key={s.id}>
               <div className={`dep-icon ${s.status.toLowerCase()}`}>
                 {['ϟ', '≈', '⌁', '✚'][index]}
@@ -911,6 +917,7 @@ return (
     {healingBusy && <p className="healing-message">Processing and checking records…</p>}
     {healingError && <div className="error-banner">{healingError}</div>}
   </section>
+
 
   {healingResult && <>
     <section className="metric-grid healing-metrics">
